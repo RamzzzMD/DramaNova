@@ -5,8 +5,8 @@ import { Play, Info, Flame, Home, Search, ChevronLeft, Menu, X, Star, Clock, Lis
 const API_BASE = 'https://api.sansekai.my.id/api/dramanova';
 
 // PROXY_URL SEKARANG MENGARAH KE BACKEND ANDA
-const PROXY_URL = 'https://drama-nova-backend-1nie.vercel.app/api/video?url=';
-const BYPASS_SUBTITLE_API = 'https://drama-nova-backend-1nie.vercel.app/api/subtitle?url=';
+const PROXY_URL = 'https://drama-nova-backend.vercel.app/api/video?url=';
+const BYPASS_SUBTITLE_API = 'https://drama-nova-backend.vercel.app/api/subtitle?url=';
 
 const fetchApi = async (endpoint) => {
   try {
@@ -480,16 +480,48 @@ const WatchView = ({ dramaId, initialEpNum }) => {
                 
                 let text = "";
                 
+                // Tambahkan AbortController untuk timeout frontend jika backend menggantung
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000); // Timeout 8 detik
+                
                 try {
                     const bypassUrl = `${BYPASS_SUBTITLE_API}${encodeURIComponent(subUrl)}`;
-                    const res = await fetch(bypassUrl);
+                    const res = await fetch(bypassUrl, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    
                     if (!res.ok) throw new Error("Bypass API gagal");
                     text = await res.text();
+                    
+                    // Verifikasi apakah yang direturn benar-benar format teks biasa (subtitle), bukan HTML error Vercel
+                    if (text.trim().startsWith('<html') || text.includes('{"error"')) {
+                        throw new Error("Respons backend invalid / timeout backend");
+                    }
                 } catch (e1) {
-                    console.warn("Bypass backend gagal, mencoba direct fetch...");
-                    const resDirect = await fetch(subUrl);
-                    if (!resDirect.ok) throw new Error("Direct fetch gagal");
-                    text = await resDirect.text();
+                    clearTimeout(timeoutId);
+                    console.warn(`Bypass backend gagal (${e1.name}), beralih ke proxy publik 1...`);
+                    
+                    try {
+                        // Fallback 1: Menggunakan corsproxy.io
+                        const fallbackUrl1 = `https://corsproxy.io/?${encodeURIComponent(subUrl)}`;
+                        const res1 = await fetch(fallbackUrl1);
+                        if (!res1.ok) throw new Error("Public Proxy 1 gagal");
+                        text = await res1.text();
+                    } catch (e2) {
+                        console.warn("Proxy publik 1 gagal, beralih ke proxy publik 2...");
+                        
+                        try {
+                            // Fallback 2: Menggunakan allorigins
+                            const fallbackUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(subUrl)}`;
+                            const res2 = await fetch(fallbackUrl2);
+                            if (!res2.ok) throw new Error("Public Proxy 2 gagal");
+                            text = await res2.text();
+                        } catch (e3) {
+                            console.warn("Semua proxy gagal, mencoba direct fetch sebagai jalan terakhir...");
+                            const resDirect = await fetch(subUrl);
+                            if (!resDirect.ok) throw new Error("Direct fetch gagal");
+                            text = await resDirect.text();
+                        }
+                    }
                 }
                 
                 if (!text.includes('WEBVTT')) {
