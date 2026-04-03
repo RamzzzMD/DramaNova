@@ -4,9 +4,8 @@ import { Play, Info, Flame, Home, Search, ChevronLeft, Menu, X, Star, Clock, Lis
 // --- API CONFIGURATION ---
 const API_BASE = 'https://api.sansekai.my.id/api/dramanova';
 
-// PROXY_URL SEKARANG MENGARAH KE BACKEND ANDA
-const PROXY_URL = 'https://drama-nova-backend.vercel.app/api/video?url=';
-const BYPASS_SUBTITLE_API = 'https://drama-nova-backend.vercel.app/api/subtitle?url=';
+// PROXY_URL MENGGUNAKAN SANSEKAI DENGAN FORMAT BARU
+const PROXY_BASE = 'https://drama.sansekai.my.id/api/proxy/video?url=';
 
 const fetchApi = async (endpoint) => {
   try {
@@ -448,7 +447,8 @@ const WatchView = ({ dramaId, initialEpNum }) => {
           setVideoData({
             playUrl: sortedList[0].MainPlayUrl,
             subtitleTracks: episode.subtitleTracks || [],
-            poster: vData.Result.PosterUrl
+            poster: vData.Result.PosterUrl,
+            timestamp: Date.now() // Buat timestamp statis agar video tidak terus mereload
           });
         }
       }
@@ -479,52 +479,47 @@ const WatchView = ({ dramaId, initialEpNum }) => {
                 if (!subUrl) return null;
                 
                 let text = "";
+                let success = false;
                 
-                // Tambahkan AbortController untuk timeout frontend jika backend menggantung
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000); // Timeout 8 detik
-                
-                try {
-                    const bypassUrl = `${BYPASS_SUBTITLE_API}${encodeURIComponent(subUrl)}`;
-                    const res = await fetch(bypassUrl, { signal: controller.signal });
-                    clearTimeout(timeoutId);
-                    
-                    if (!res.ok) throw new Error("Bypass API gagal");
-                    text = await res.text();
-                    
-                    // Verifikasi apakah yang direturn benar-benar format teks biasa (subtitle), bukan HTML error Vercel
-                    if (text.trim().startsWith('<html') || text.includes('{"error"')) {
-                        throw new Error("Respons backend invalid / timeout backend");
-                    }
-                } catch (e1) {
-                    clearTimeout(timeoutId);
-                    console.warn(`Bypass backend gagal (${e1.name}), beralih ke proxy publik 1...`);
-                    
+                // Daftar antrean URL untuk mencoba fetching subtitle (Fallback Cepat)
+                const urlsToTry = [
+                    `${PROXY_BASE}${encodeURIComponent(subUrl)}&type=sub&t=${Date.now()}`,
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(subUrl)}`,
+                    `https://corsproxy.io/?url=${encodeURIComponent(subUrl)}`,
+                    subUrl.replace(/^http:\/\//i, 'https://'), // Coba paksakan HTTP ke HTTPS langsung
+                    subUrl
+                ];
+
+                for (const url of urlsToTry) {
                     try {
-                        // Fallback 1: Menggunakan corsproxy.io
-                        const fallbackUrl1 = `https://corsproxy.io/?${encodeURIComponent(subUrl)}`;
-                        const res1 = await fetch(fallbackUrl1);
-                        if (!res1.ok) throw new Error("Public Proxy 1 gagal");
-                        text = await res1.text();
-                    } catch (e2) {
-                        console.warn("Proxy publik 1 gagal, beralih ke proxy publik 2...");
+                        const controller = new AbortController();
+                        // Timeout singkat per metode (6 detik) agar tidak tertahan lama
+                        const timeoutId = setTimeout(() => controller.abort(), 6000); 
                         
-                        try {
-                            // Fallback 2: Menggunakan allorigins
-                            const fallbackUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(subUrl)}`;
-                            const res2 = await fetch(fallbackUrl2);
-                            if (!res2.ok) throw new Error("Public Proxy 2 gagal");
-                            text = await res2.text();
-                        } catch (e3) {
-                            console.warn("Semua proxy gagal, mencoba direct fetch sebagai jalan terakhir...");
-                            const resDirect = await fetch(subUrl);
-                            if (!resDirect.ok) throw new Error("Direct fetch gagal");
-                            text = await resDirect.text();
+                        const res = await fetch(url, { signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        
+                        if (res.ok) {
+                            const tempText = await res.text();
+                            // Validasi: pastikan isinya benar-benar subtitle (mengandung kode waktu/WEBVTT), bukan pesan error Proxy
+                            if (tempText.includes('00:') || tempText.includes('WEBVTT') || tempText.includes('-->')) {
+                                text = tempText;
+                                success = true;
+                                break; // Hentikan loop jika berhasil ditarik
+                            }
                         }
+                    } catch (e) {
+                        console.warn(`Fetch subtitle gagal pada url ${url.substring(0, 30)}... : ${e.message}`);
                     }
                 }
                 
+                if (!success) {
+                    throw new Error("Semua metode fetch subtitle gagal");
+                }
+                
+                // Konversi SRT ke VTT secara standar (Menyesuaikan pemisah titik dan baris)
                 if (!text.includes('WEBVTT')) {
+                    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
                     text = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
                 }
                 
@@ -534,7 +529,7 @@ const WatchView = ({ dramaId, initialEpNum }) => {
                 
                 return { ...track, vttUrl: url };
             } catch (e) {
-                console.error("Gagal memproses subtitle:", e.message || e);
+                console.error("Gagal memproses subtitle:", e.message || "Unknown error");
                 return null;
             }
         }));
@@ -556,7 +551,7 @@ const WatchView = ({ dramaId, initialEpNum }) => {
   // Efek khusus untuk MEMAKSA video memuat (reload) dan memutar saat source berubah
   useEffect(() => {
     if (subtitlesReady && videoRef.current) {
-        videoRef.current.load(); // Paksa browser untuk fetch ulang data video
+        videoRef.current.load();
         const playPromise = videoRef.current.play();
         if (playPromise !== undefined) {
             playPromise.catch(error => {
@@ -599,15 +594,19 @@ const WatchView = ({ dramaId, initialEpNum }) => {
               controls
               autoPlay
               playsInline
-              crossOrigin="anonymous"         // Sangat krusial agar subtitle tidak bentrok dengan CORS video
-              referrerPolicy="no-referrer"    // Mencegah pemblokiran dari server video karena referensi domain lain
               poster={videoData.poster}
-              onError={(e) => console.error("Video Error:", e.target.error)}
+              onError={(e) => {
+                const err = e.target.error;
+                console.error("Video Error:", err ? `Code: ${err.code}, Message: ${err.message}` : "Unknown error");
+              }}
             >
-              {/* Prioritaskan memuat melalui Proxy Backend Anda */}
-              <source src={`${PROXY_URL}${encodeURIComponent(videoData.playUrl)}`} type="video/mp4" />
+              {/* MENGGUNAKAN PROXY SANSEKAI DENGAN TAMBAHAN TIMESTAMP UNTUK VIDEO */}
+              <source src={`${PROXY_BASE}${encodeURIComponent(videoData.playUrl)}&t=${videoData.timestamp}`} type="video/mp4" />
               
-              {/* Fallback darurat jika Proxy mati, biarkan browser mencoba URL asli secara langsung */}
+              {/* Fallback 1: Memaksa HTTPS untuk menghindari pemblokiran Mixed Content dari Browser */}
+              <source src={videoData.playUrl.replace(/^http:\/\//i, 'https://')} type="video/mp4" />
+
+              {/* Fallback 2: URL asli secara langsung */}
               <source src={videoData.playUrl} type="video/mp4" />
 
               {processedTracks.map((track, i) => (
