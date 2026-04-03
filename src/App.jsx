@@ -3,9 +3,9 @@ import { Play, Info, Flame, Home, Search, ChevronLeft, Menu, X, Star, Clock, Lis
 
 // --- API CONFIGURATION ---
 const API_BASE = 'https://api.sansekai.my.id/api/dramanova';
-const PROXY_URL = 'https://drama.sansekai.my.id/api/proxy/video?url=';
 
-// PENTING: Ganti URL di bawah ini dengan URL domain Vercel Backend Anda!
+// PROXY_URL SEKARANG MENGARAH KE BACKEND ANDA
+const PROXY_URL = 'https://drama-nova-backend-1nie.vercel.app/api/video?url=';
 const BYPASS_SUBTITLE_API = 'https://drama-nova-backend-1nie.vercel.app/api/subtitle?url=';
 
 const fetchApi = async (endpoint) => {
@@ -572,7 +572,7 @@ const WatchView = ({ dramaId, initialEpNum }) => {
               poster={videoData.poster}
               onError={(e) => console.error("Video Error:", e.target.error)}
             >
-              {/* Prioritaskan memuat melalui Proxy */}
+              {/* Prioritaskan memuat melalui Proxy Backend Anda */}
               <source src={`${PROXY_URL}${encodeURIComponent(videoData.playUrl)}`} type="video/mp4" />
               
               {/* Fallback darurat jika Proxy mati, biarkan browser mencoba URL asli secara langsung */}
