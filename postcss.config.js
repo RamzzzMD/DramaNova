@@ -1,6 +1,6 @@
 export default {
   plugins: {
-    tailwindcss: {},
+    '@tailwindcss/postcss': {}, // Ganti 'tailwindcss' menjadi '@tailwindcss/postcss'
     autoprefixer: {},
   },
 }
