@@ -21,7 +21,7 @@ const PROXY_URL = "https://drama.sansekai.my.id/api/proxy/video?url=";
 // PENTING: Ganti URL di bawah ini dengan URL domain Vercel Backend Anda yang telah berhasil di-deploy!
 // Pastikan berakhiran dengan /api/subtitle?url=
 const BYPASS_SUBTITLE_API =
-  "https://backend-dramanova-anda.vercel.app/api/subtitle?url=";
+  "https://drama-nova-backend.vercel.app/api/subtitle?url=";
 
 const fetchApi = async (endpoint) => {
   try {
