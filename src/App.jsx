@@ -16,7 +16,7 @@ import {
 
 // --- API CONFIGURATION ---
 const API_BASE = "https://api.sansekai.my.id/api/dramanova";
-const PROXY_URL = "https://drama.sansekai.my.id/api/proxy/video?url=";
+const PROXY_URL = "https://drama-nova-backend.vercel.app/api/subtitle?url=";
 
 // PENTING: Ganti URL di bawah ini dengan URL domain Vercel Backend Anda yang telah berhasil di-deploy!
 // Pastikan berakhiran dengan /api/subtitle?url=
